@@ -603,9 +603,9 @@ class Trainer:
 
       if acc > acc_max and self.checkpointer is not None:
         acc_max = acc
-        # weights = jax.tree.map(np.asarray, self.target_net.save_state())
-        # self.checkpointer.save(weights, step=bar_idx)
-        # self.target_net.visualize(inputs, filename=f'{self.filepath}/{bar_idx}/train-results-{bar_idx}.png')
+        weights = jax.tree.map(np.asarray, self.target_net.save_state())
+        self.checkpointer.save(weights, step=bar_idx)
+        self.target_net.visualize(inputs, filename=f'{self.filepath}/{bar_idx}/train-results-{bar_idx}.png')
 
       t0 = time.time()
       if acc_max > 0.99:
@@ -662,13 +662,139 @@ def training():
     trainer.f_train()
 
 
+def verification():
+  import seaborn as sns
+
+  filepath = r'results\task-training\bptt-ec-snn_coba-gif-dense-2024-05-30 13-54-18'
+
+  checkpointer = Checkpointer(filepath, max_to_keep=10)
+
+  def visualize_activity(self, inputs, n2show: int = 4, filename: str = None):
+    n_seq = inputs.shape[0]
+    indices = np.arange(n_seq)
+    batch_size = inputs.shape[1]
+    bst.init_states(self, batch_size)
+
+    def step(i, inp):
+      with bst.environ.context(i=i, t=i * bst.environ.get_dt()):
+        self.update(inp)
+        n_exc = int(self.pop.num * 0.8)
+        n_inh = self.pop.num - n_exc
+        exc_indices = np.arange(0, n_exc, n_exc // 5)
+        inh_indices = np.arange(0, n_inh, n_inh // 5) + n_exc
+        return {'rec_spk': self.pop.get_spike(),
+                'exc_mem': self.pop.V.value[:, exc_indices],
+                'inh_mem': self.pop.V.value[:, inh_indices],
+                'out': self.out.r.value, }
+
+    res = bst.transform.for_loop(step, indices, inputs, pbar=bst.transform.ProgressBar(10))
+
+    fig, gs = bp.visualize.get_figure(5, n2show, 2.0, 4.)
+    for i in range(n2show):
+      # input spikes
+      bp.visualize.raster_plot(indices, inputs[:, i], ax=fig.add_subplot(gs[0, i]), xlim=(0, n_seq))
+      # recurrent spikes
+      bp.visualize.raster_plot(indices, res['rec_spk'][:, i], ax=fig.add_subplot(gs[1, i]), xlim=(0, n_seq))
+      # recurrent membrane potentials
+      ax = fig.add_subplot(gs[2, i])
+      ax.plot(indices, res['exc_mem'][:, i])
+      # recurrent membrane potentials
+      ax = fig.add_subplot(gs[3, i])
+      ax.plot(indices, res['inh_mem'][:, i])
+      # output potentials
+      ax = fig.add_subplot(gs[4, i])
+      ax.plot(indices, res['out'][:, i])
+
+    if filename is None:
+      plt.show()
+      plt.close()
+    else:
+      plt.savefig(filename)
+      plt.close()
+
+  def visualize_weights(self, show=True):
+    if gargs.conn_method == 'dense':
+      weights = jnp.abs(jnp.concat([self.exc2r.comm.weight_op.value, self.inh2r.comm.weight_op.value], axis=0))
+    else:
+      weights = jnp.abs(jnp.concat([self.exc2r.comm.to_dense_conn(), self.inh2r.comm.to_dense_conn()], axis=0))
+    weights = np.ma.array(weights, mask=weights == 0)
+
+    fig, gs = bp.visualize.get_figure(1, 1, 5., 5.)
+    ax = fig.add_subplot(gs[0, 0])
+    # pcolormesh = plt.pcolormesh(weights, cmap='Purples')
+    # pcolormesh = plt.pcolormesh(weights, cmap='Reds')
+    # pcolormesh = plt.pcolormesh(weights, cmap='seismic')
+    pcolormesh = plt.pcolormesh(weights, cmap='cool', vmin=0.0, vmax=1.5)
+    cmap = pcolormesh.cmap  # Get the colormap
+    cmap.set_bad('white', 1.)  # Set white for NaN values with full alpha
+    plt.colorbar(pcolormesh)
+    plt.xlabel('To neurons')
+    plt.ylabel('From neurons')
+    plt.title('Network connectivity')
+    if show:
+      plt.show()
+
+  def plot_weight_dists(self, show=True):
+    exc_weight = np.abs(self.exc2r.comm.weight_op.value).flatten()
+    inh_weight = np.abs(self.inh2r.comm.weight_op.value).flatten()
+
+    fig, gs = bp.visualize.get_figure(1, 2, 3, 3.)
+    ax = fig.add_subplot(gs[0, 0])
+    bin_res = plt.hist(exc_weight, bins=100, color='blue', alpha=0.7, density=True)
+    plt.title('Excitatory weights')
+    sns.kdeplot(exc_weight, thresh=0.01)
+    plt.xlim(0., bin_res[1].max())
+
+    ax = fig.add_subplot(gs[0, 1])
+    bin_res = plt.hist(inh_weight, bins=100, color='blue', alpha=0.7, density=True)
+    sns.kdeplot(inh_weight, thresh=0.01)
+    plt.title('Inhibitory weights')
+
+    if show:
+      plt.show()
+
+  global gargs
+  with open(os.path.join(filepath, 'loss.txt'), 'r') as f:
+    line = f.readline().strip().replace('Namespace', 'dict')
+    gargs = bst.util.DotDict(eval(line))
+    print(gargs)
+
+  bst.environ.set(
+    dt=gargs.dt,
+    mode=bst.mixin.JointMode(bst.mixin.Training(), bst.mixin.Batching())
+  )
+  task = bd.cognitive.EvidenceAccumulation(dt=bst.environ.get_dt(), mode='spiking')
+  loader = TaskLoader(task, batch_size=gargs.batch_size, num_workers=gargs.num_workers)
+  gargs.warmup = -(task.t_recall / bst.environ.get_dt())
+  net = SNNCobaNet(task.num_inputs,
+                   gargs.n_rec,
+                   task.num_outputs,
+                   beta=gargs.beta,
+                   tau_a=gargs.tau_a,
+                   tau_neu=gargs.tau_neu,
+                   tau_syn=gargs.tau_syn,
+                   tau_out=gargs.tau_out,
+                   ff_scale=gargs.ff_scale,
+                   rec_scale=gargs.rec_scale,
+                   w_ei_ratio=gargs.w_ei_ratio,
+                   conn_method=gargs.conn_method, )
+
+  # visualize_weights(net, show=False)
+  plot_weight_dists(net, show=False)
+  weight_data = checkpointer.restore(net.save_state())
+  net.load_state(weight_data)
+  # visualize_weights(net)
+  plot_weight_dists(net)
+
+  inputs, _ = next(iter(loader))
+  inputs = jnp.asarray(inputs, dtype=bst.environ.dftype()).transpose(1, 0, 2)
+  visualize_activity(net, inputs)
+
+
 if __name__ == '__main__':
   pass
   training()
 
-
-
 # python task-coba-ei-rsnn.py --method bptt
 # python task-coba-ei-rsnn.py --method diag
 # python task-coba-ei-rsnn.py --method expsm_diag --etrace_decay 0.98
-
