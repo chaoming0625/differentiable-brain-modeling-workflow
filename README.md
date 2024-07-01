@@ -1,4 +1,4 @@
-# Simple Example to illustrate the Differentiable Approach for Multi-scale Brain Modeling
+# Illustration to the Differentiable Approach for Multi-scale Brain Modeling
 
 Here, we illustrate to use the BrainPy ecosystem to implement a differentiable approach for multi-scale brain modeling.
 See our paper for more details:
