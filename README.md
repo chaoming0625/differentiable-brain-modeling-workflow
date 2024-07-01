@@ -1,6 +1,6 @@
 # Illustration to the Differentiable Approach for Multi-scale Brain Modeling
 
-Here, we illustrate to use the BrainPy ecosystem to implement a differentiable approach for multi-scale brain modeling.
+Here, we illustrate to implement a differentiable approach for multi-scale brain modeling.
 See our paper for more details:
 
 - [C. Wang, M. Lyu, T. Zhang, and S. Wu, “A differentiable approach to multi-scale brain modeling,” in ICML 2024 Workshop on Differentiable Almost Everything, 2024. ](https://openreview.net/forum?id=a6cpnxdGq7)
@@ -10,11 +10,11 @@ See our paper for more details:
 
 In general, several Python packages related to the brainpy ecosystem are required to run the code:
 
-- [brainstate](https://github.com/brainpy/brainstate)
-- [brainunit](https://github.com/brainpy/brainunit)
-- [brainscale](https://github.com/brainpy/brainscale)
-- [braintools](https://github.com/brainpy/braintools)
-- [brainpy-datasets](https://github.com/brainpy/datasets)
+- [brainstate](https://github.com/chaoming0625/brainstate)
+- [brainunit](https://github.com/chaoming0625/brainunit)
+- [brainscale](https://github.com/chaoming0625/brainscale)
+- [braintools](https://github.com/chaoming0625/braintools)
+- [brainpy-datasets](https://github.com/chaoming0625/braindata)
 
 ## Neuron fitting
 
